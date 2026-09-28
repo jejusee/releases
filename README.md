@@ -1,52 +1,125 @@
-# Releases
+# Release Hub
 
-여러 소프트웨어 프로젝트의 **공통 Public 배포 저장소**입니다.
+`jejusee/releases` is a project- and OS-independent distribution hub.
 
-개발 소스는 각 프로젝트의 별도 Private 저장소에서 관리하고, 이 저장소에는 사용자가 설치와 업데이트에 필요한 공개 파일 및 프로젝트별 사용 설명서를 제공합니다.
+It owns the public distribution contract:
 
-## Projects
+- semantic version calculation
+- prerelease/stable promotion
+- GitHub Release creation
+- immutable Release Assets
+- SHA-256 metadata
+- per-project `manifest.json`
+- project-specific bootstrap installers and user documentation
 
-| Project | Description | Documentation |
-|---|---|---|
-| `rclone-manager` | Linux rclone mount 관리 도구 | [사용 설명서](rclone-manager/README.md) |
+Build and test logic stays in each development repository.
 
-새 프로젝트는 프로젝트 이름의 폴더를 하나 추가하여 동일한 구조로 관리합니다.
+## Release model
 
-## Repository 구조
+A development repository builds a finished package, uploads it as a workflow artifact,
+then calls the reusable workflows in this repository.
+
+The public caller still exposes only one **Release** Action. Internally the hub uses
+two reusable stages so projects can embed the calculated version before packaging:
+
+`plan -> project build/package -> publish`.
+
+Release types:
+
+| Type | Meaning |
+|---|---|
+| `patch` | Start a new patch RC from stable (`1.2.3` -> `1.2.4-rc.1`) |
+| `minor` | Start a new minor RC from stable (`1.2.3` -> `1.3.0-rc.1`) |
+| `major` | Start a new major RC from stable (`1.2.3` -> `2.0.0-rc.1`) |
+| `beta` | Increment the current RC (`1.3.0-rc.1` -> `1.3.0-rc.2`) |
+| `release` | Promote the current RC (`1.3.0-rc.2` -> `1.3.0`) |
+
+Rules:
+
+- `beta` requires an existing prerelease.
+- `release` requires an existing prerelease.
+- `patch`, `minor`, and `major` require no active prerelease.
+- A released version is never republished.
+- Existing Release Assets are never overwritten.
+- `manifest.json` is updated only after all assets are uploaded successfully.
+- `stable` is not changed by RC releases.
+- `versions` keeps immutable historical metadata.
+
+## Repository layout
 
 ```text
 releases/
-├── README.md
-├── rclone-manager/
+├── .github/
+│   └── workflows/
+│       ├── plan.yml
+│       └── publish.yml
+├── scripts/
+│   └── release_hub.py
+├── examples/
+│   └── caller/
+│       └── release.yml
+├── <project>/
 │   ├── README.md
-│   ├── install.sh
+│   ├── install.sh / install.ps1
 │   └── manifest.json
-└── <project>/
-    ├── README.md
-    ├── install.*
-    └── manifest.json
+└── README.md
 ```
 
-각 프로젝트 폴더는 하나의 독립된 배포 단위입니다.
+## Project manifest
 
-- `README.md` — 해당 프로젝트의 설치, 설정, 사용, 업데이트, 삭제 및 문제 해결 설명
-- `install.*` — 최초 설치를 위한 Bootstrap installer
-- `manifest.json` — Stable/Prerelease 버전, 다운로드 주소 및 SHA256 정보
+Each project owns `<project>/manifest.json`.
 
-실제 `.tar.gz`, `.zip`, `.exe` 등의 프로그램 패키지는 Git 저장소에 직접 넣지 않고 **GitHub Release Assets**로 배포합니다.
+The hub supports any platform key, for example:
 
-## 배포 흐름
+- `linux-x64`
+- `linux-arm64`
+- `windows-x64`
+- `windows-arm64`
+- `macos-arm64`
+- `any`
 
-```text
-Private Development Repository
-        ↓
-GitHub Actions
-        ↓
-GitHub Release Assets
-        ↓
-프로젝트별 manifest.json 갱신
-        ↓
-사용자 설치 / 업데이트
+A release may contain multiple assets/platforms.
+
+## Calling the hub
+
+Each development repository keeps only a small caller workflow. See
+`examples/caller/release.yml`.
+
+The caller:
+
+1. chooses `beta`, `patch`, `minor`, `major`, or `release`;
+2. asks the hub for the next version;
+3. builds/packages using that version;
+4. uploads the finished files as one workflow artifact;
+5. calls the hub to publish them.
+
+This repository does not need to know whether the package was produced by Bash,
+.NET, Python, Node.js, or another tool.
+
+## Required secret
+
+Development repositories must provide `RELEASE_TOKEN`.
+
+The token must be able to:
+
+- create Releases in `jejusee/releases`;
+- upload Release Assets;
+- commit and push the changed project manifest.
+
+Use the minimum repository scope required for `jejusee/releases`.
+
+## Workflow version pinning
+
+During initial development a caller can use:
+
+```yaml
+uses: jejusee/releases/.github/workflows/plan.yml@main
 ```
 
-Release 버전이 변경될 때마다 이 README를 수정할 필요는 없습니다. 프로젝트가 추가되거나 공통 배포 구조가 변경될 때만 갱신합니다.
+After the hub is validated, create a stable hub tag such as `hub-v1` and pin callers:
+
+```yaml
+uses: jejusee/releases/.github/workflows/plan.yml@hub-v1
+```
+
+That prevents future hub maintenance from unexpectedly changing existing projects.

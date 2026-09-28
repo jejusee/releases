@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release type
+        required: true
+        type: choice
+        default: beta
+        options:
+          - beta
+          - patch
+          - minor
+          - major
+          - release
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    uses: jejusee/releases/.github/workflows/plan.yml@main
+    with:
+      project: example-project
+      release_type: ${{ inputs.release_type }}
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+  package:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Replace this step with the project's build/package process.
+      # The version is available before packaging.
+      - name: Build package
+        shell: bash
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p package dist
+          printf '%s\n' "$VERSION" > package/VERSION
+
+          # Example only.
+          cp -R . package/source
+          rm -rf package/source/.git package/source/dist package/source/package
+
+          tar -czf "dist/example-${VERSION}-linux-x64.tar.gz" -C package .
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [plan, package]
+    uses: jejusee/releases/.github/workflows/publish.yml@main
+    with:
+      project: example-project
+      release_type: ${{ inputs.release_type }}
+      version: ${{ needs.plan.outputs.version }}
+      artifact_name: release-package
+      asset_spec: >-
+        [{"platform":"linux-x64","file":"example-${{ needs.plan.outputs.version }}-linux-x64.tar.gz"}]
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
