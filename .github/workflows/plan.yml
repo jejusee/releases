@@ -1,0 +1,87 @@
+name: Release Hub - Plan
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: Project identifier
+        required: true
+        type: string
+      release_type:
+        description: beta, patch, minor, major, or release
+        required: true
+        type: string
+      target_repository:
+        description: Public distribution repository
+        required: false
+        default: jejusee/releases
+        type: string
+    secrets:
+      RELEASE_TOKEN:
+        required: true
+    outputs:
+      version:
+        description: Version to embed in the package
+        value: ${{ jobs.plan.outputs.version }}
+      tag:
+        description: Tag that will be created
+        value: ${{ jobs.plan.outputs.tag }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.release_type }}" in
+            beta|patch|minor|major|release) ;;
+            *) echo "::error::Invalid release_type"; exit 1 ;;
+          esac
+          if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::Invalid project identifier"
+            exit 1
+          fi
+
+      - name: Checkout Release Hub
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.target_repository }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          ref: main
+          path: release-hub
+          fetch-depth: 1
+
+      - name: Calculate next version
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(
+            python3 release-hub/scripts/release_hub.py next \
+              --project "${{ inputs.project }}" \
+              --manifest "release-hub/${{ inputs.project }}/manifest.json" \
+              --release-type "${{ inputs.release_type }}"
+          )"
+          TAG="${{ inputs.project }}-v${VERSION}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Release plan"
+            echo
+            echo "- Project: \`${{ inputs.project }}\`"
+            echo "- Type: \`${{ inputs.release_type }}\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- Tag: \`$TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"
