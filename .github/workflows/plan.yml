@@ -7,8 +7,8 @@ on:
         description: Project identifier
         required: true
         type: string
-      release_type:
-        description: beta, patch, minor, major, or release
+      operation:
+        description: dev-major, dev-minor, dev-patch, dev-rc, or release-stable
         required: true
         type: string
       target_repository:
@@ -42,9 +42,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${{ inputs.release_type }}" in
-            beta|patch|minor|major|release) ;;
-            *) echo "::error::Invalid release_type"; exit 1 ;;
+          case "${{ inputs.operation }}" in
+            dev-major|dev-minor|dev-patch|dev-rc|release-stable) ;;
+            *) echo "::error::Invalid operation"; exit 1 ;;
           esac
           if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
             echo "::error::Invalid project identifier"
@@ -70,7 +70,7 @@ jobs:
             python3 release-hub/scripts/release_hub.py next \
               --project "${{ inputs.project }}" \
               --manifest "release-hub/${{ inputs.project }}/manifest.json" \
-              --release-type "${{ inputs.release_type }}"
+              --operation "${{ inputs.operation }}"
           )"
           TAG="${{ inputs.project }}-v${VERSION}"
 
@@ -81,7 +81,7 @@ jobs:
             echo "## Release plan"
             echo
             echo "- Project: \`${{ inputs.project }}\`"
-            echo "- Type: \`${{ inputs.release_type }}\`"
+            echo "- Operation: \`${{ inputs.operation }}\`"
             echo "- Version: \`$VERSION\`"
             echo "- Tag: \`$TAG\`"
           } >> "$GITHUB_STEP_SUMMARY"
