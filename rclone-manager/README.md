@@ -12,6 +12,7 @@ The shared Release Hub workflow updates only `manifest.json`.
 Project documentation and bootstrap installers are not rewritten during releases.
 
 
+# 설치방법
 ```
 curl -fsSL https://raw.githubusercontent.com/jejusee/releases/main/rclone-manager/install.sh | sudo bash
 ```
