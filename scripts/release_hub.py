@@ -93,6 +93,12 @@ def validate_release_entry(item: Any) -> None:
         sha = asset.get("sha256")
         if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
             die(f"Invalid SHA256 for {platform}")
+        asset_type = asset.get("type", "archive")
+        if asset_type not in {"archive", "executable", "msi"}:
+            die(f"Invalid asset type for {platform}: {asset_type}")
+        installer = asset.get("installer")
+        if asset_type == "archive" and (not isinstance(installer, str) or not installer):
+            die(f"Archive asset requires installer for {platform}")
 
 
 def next_version(manifest: dict[str, Any], release_type: str) -> str:
@@ -193,10 +199,22 @@ def cmd_update(args: argparse.Namespace) -> None:
             f"https://github.com/{args.repository}/releases/download/"
             f"{args.tag}/{filename}"
         )
-        assets[platform] = {
+        asset = {
             "url": url,
             "sha256": sha256(path),
         }
+        asset_type = item.get("type", "archive")
+        if asset_type not in {"archive", "executable", "msi"}:
+            die(f"Invalid asset type: {asset_type!r}")
+        asset["type"] = asset_type
+        installer = item.get("installer")
+        if installer is not None:
+            if not isinstance(installer, str) or not installer or installer.startswith("/") or ".." in Path(installer).parts:
+                die(f"Invalid installer path: {installer!r}")
+            asset["installer"] = installer
+        if asset_type == "archive" and not installer:
+            die(f"Archive asset requires installer: {platform}")
+        assets[platform] = asset
 
     published_at = args.published_at or dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     entry = {

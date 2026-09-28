@@ -67,6 +67,6 @@ jobs:
       version: ${{ needs.plan.outputs.version }}
       artifact_name: release-package
       asset_spec: >-
-        [{"platform":"linux-x64","file":"example-${{ needs.plan.outputs.version }}-linux-x64.tar.gz"}]
+        [{"platform":"linux-x64","file":"example-${{ needs.plan.outputs.version }}-linux-x64.tar.gz","type":"archive","installer":"lib/install.sh"}]
     secrets:
       RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
