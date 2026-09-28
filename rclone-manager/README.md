@@ -7,6 +7,11 @@ Linux 서버에서 여러 `rclone mount`를 인스턴스별로 관리하기 위�
 - Linux
 - systemd
 - rclone
+```
+# 포크버전
+curl -fsSL "https://raw.githubusercontent.com/wiserain/rclone/mod/install.sh" | sudo bash
+#curl -fsSL "https://raw.githubusercontent.com/wiserain/rclone/mod/install.sh" | sudo bash -s v1.69.3-241
+```
 - FUSE (`fusermount3` 또는 `fusermount`)
 - `curl` 또는 `wget`
 
