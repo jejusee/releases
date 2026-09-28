@@ -10,3 +10,8 @@ Files in this folder form the stable public interface for installation and updat
 
 The shared Release Hub workflow updates only `manifest.json`.
 Project documentation and bootstrap installers are not rewritten during releases.
+
+
+```
+curl -fsSL https://raw.githubusercontent.com/jejusee/releases/main/rclone-manager/install.sh | sudo bash
+```
