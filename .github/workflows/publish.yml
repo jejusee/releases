@@ -139,6 +139,14 @@ jobs:
                   raise SystemExit(f"file must be a plain filename: {filename}")
               if not (Path("assets") / filename).is_file():
                   raise SystemExit(f"artifact file not found: {filename}")
+              asset_type = item.get("type", "archive")
+              if asset_type not in {"archive", "executable", "msi"}:
+                  raise SystemExit(f"invalid asset type: {asset_type}")
+              installer = item.get("installer")
+              if asset_type == "archive" and not installer:
+                  raise SystemExit(f"archive asset requires installer: {platform}")
+              if installer and (Path(installer).is_absolute() or ".." in Path(installer).parts):
+                  raise SystemExit(f"invalid installer path: {installer}")
               seen_platforms.add(platform)
               seen_files.add(filename)
           PY
@@ -213,6 +221,7 @@ jobs:
             --manifest "release-hub/${{ inputs.project }}/manifest.json"
 
       - name: Commit manifest
+        id: commit_manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -240,6 +249,18 @@ jobs:
             --repo "${{ inputs.target_repository }}" \
             --draft=false \
             --latest=false
+
+      - name: Clean up failed draft release
+        if: ${{ failure() && steps.meta.outputs.tag != '' && steps.commit_manifest.outcome != 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set +e
+          IS_DRAFT="$(gh release view "${{ steps.meta.outputs.tag }}" --repo "${{ inputs.target_repository }}" --json isDraft --jq .isDraft 2>/dev/null)"
+          if [[ "$IS_DRAFT" == "true" ]]; then
+            gh release delete "${{ steps.meta.outputs.tag }}" --repo "${{ inputs.target_repository }}" --cleanup-tag --yes
+          fi
 
       - name: Summary
         shell: bash
