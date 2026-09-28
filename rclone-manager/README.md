@@ -1,18 +1,12 @@
-# rclone-manager Distribution
+# rclone-manager
 
-이 폴더는 rclone-manager의 공개 배포 진입점입니다.
+Public distribution metadata and documentation for `rclone-manager`.
 
-- `manifest.json`: stable/prerelease/version별 asset metadata
-- `install.sh`: 공통 `bootstrap/install.sh`를 rclone-manager로 호출하는 얇은 wrapper
+Files in this folder form the stable public interface for installation and updates:
 
-설치:
+- `manifest.json` — release/update metadata
+- `install.sh` — bootstrap installer (add the project's production installer here)
+- `README.md` — user documentation
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/jejusee/releases/main/rclone-manager/install.sh | sudo bash
-```
-
-특정 버전:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jejusee/releases/main/rclone-manager/install.sh | sudo bash -s -- 0.2.0-rc.1
-```
+The shared Release Hub workflow updates only `manifest.json`.
+Project documentation and bootstrap installers are not rewritten during releases.

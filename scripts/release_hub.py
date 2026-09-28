@@ -93,23 +93,17 @@ def validate_release_entry(item: Any) -> None:
         sha = asset.get("sha256")
         if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
             die(f"Invalid SHA256 for {platform}")
-        asset_type = asset.get("type", "archive")
-        if asset_type not in {"archive", "executable", "msi"}:
-            die(f"Invalid asset type for {platform}: {asset_type}")
-        installer = asset.get("installer")
-        if asset_type == "archive" and (not isinstance(installer, str) or not installer):
-            die(f"Archive asset requires installer for {platform}")
 
 
-def next_version(manifest: dict[str, Any], release_type: str) -> str:
+def next_version(manifest: dict[str, Any], operation: str) -> str:
     stable = manifest.get("stable")
     pre = manifest.get("prerelease")
 
-    if release_type in {"patch", "minor", "major"}:
+    if operation in {"dev-patch", "dev-minor", "dev-major"}:
         if pre is not None:
             die(
-                f"Cannot start {release_type}: active prerelease "
-                f"{pre['version']} exists. Use beta or release first."
+                f"Cannot start {operation}: active prerelease "
+                f"{pre['version']} exists. Use dev-rc or release-stable first."
             )
         if stable is None:
             base = (0, 0, 0)
@@ -120,9 +114,9 @@ def next_version(manifest: dict[str, Any], release_type: str) -> str:
             base = (major, minor, patch)
 
         major, minor, patch = base
-        if release_type == "patch":
+        if operation == "dev-patch":
             patch += 1
-        elif release_type == "minor":
+        elif operation == "dev-minor":
             minor += 1
             patch = 0
         else:
@@ -131,23 +125,23 @@ def next_version(manifest: dict[str, Any], release_type: str) -> str:
             patch = 0
         return f"{major}.{minor}.{patch}-rc.1"
 
-    if release_type == "beta":
+    if operation == "dev-rc":
         if pre is None:
-            die("Cannot create beta: no active prerelease. Start with patch, minor, or major.")
+            die("Cannot update RC: no active prerelease. Start with dev-major, dev-minor, or dev-patch.")
         major, minor, patch, rc = parse_version(pre["version"])
         if rc is None:
             die("prerelease must be an rc version")
         return f"{major}.{minor}.{patch}-rc.{rc + 1}"
 
-    if release_type == "release":
+    if operation == "release-stable":
         if pre is None:
-            die("Cannot release: no active prerelease.")
+            die("Cannot release stable: no active prerelease.")
         major, minor, patch, rc = parse_version(pre["version"])
         if rc is None:
             die("prerelease must be an rc version")
         return f"{major}.{minor}.{patch}"
 
-    die(f"Unknown release type: {release_type}")
+    die(f"Unknown operation: {operation}")
 
 
 def sha256(path: Path) -> str:
@@ -160,7 +154,7 @@ def sha256(path: Path) -> str:
 
 def cmd_next(args: argparse.Namespace) -> None:
     manifest = load_manifest(Path(args.manifest), args.project)
-    version = next_version(manifest, args.release_type)
+    version = next_version(manifest, args.operation)
     print(version)
 
 
@@ -168,7 +162,7 @@ def cmd_update(args: argparse.Namespace) -> None:
     manifest_path = Path(args.manifest)
     manifest = load_manifest(manifest_path, args.project)
 
-    expected = next_version(manifest, args.release_type)
+    expected = next_version(manifest, args.operation)
     if args.version != expected:
         die(f"Version race/mismatch: expected {expected}, got {args.version}")
 
@@ -199,22 +193,10 @@ def cmd_update(args: argparse.Namespace) -> None:
             f"https://github.com/{args.repository}/releases/download/"
             f"{args.tag}/{filename}"
         )
-        asset = {
+        assets[platform] = {
             "url": url,
             "sha256": sha256(path),
         }
-        asset_type = item.get("type", "archive")
-        if asset_type not in {"archive", "executable", "msi"}:
-            die(f"Invalid asset type: {asset_type!r}")
-        asset["type"] = asset_type
-        installer = item.get("installer")
-        if installer is not None:
-            if not isinstance(installer, str) or not installer or installer.startswith("/") or ".." in Path(installer).parts:
-                die(f"Invalid installer path: {installer!r}")
-            asset["installer"] = installer
-        if asset_type == "archive" and not installer:
-            die(f"Archive asset requires installer: {platform}")
-        assets[platform] = asset
 
     published_at = args.published_at or dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     entry = {
@@ -224,7 +206,7 @@ def cmd_update(args: argparse.Namespace) -> None:
     }
 
     manifest["versions"][args.version] = entry
-    if args.release_type == "release":
+    if args.operation == "release-stable":
         manifest["stable"] = entry
         manifest["prerelease"] = None
     else:
@@ -257,13 +239,13 @@ def build_parser() -> argparse.ArgumentParser:
     n = sub.add_parser("next")
     n.add_argument("--project", required=True)
     n.add_argument("--manifest", required=True)
-    n.add_argument("--release-type", required=True, choices=["beta", "patch", "minor", "major", "release"])
+    n.add_argument("--operation", required=True, choices=["dev-major", "dev-minor", "dev-patch", "dev-rc", "release-stable"])
     n.set_defaults(func=cmd_next)
 
     u = sub.add_parser("update")
     u.add_argument("--project", required=True)
     u.add_argument("--manifest", required=True)
-    u.add_argument("--release-type", required=True, choices=["beta", "patch", "minor", "major", "release"])
+    u.add_argument("--operation", required=True, choices=["dev-major", "dev-minor", "dev-patch", "dev-rc", "release-stable"])
     u.add_argument("--version", required=True)
     u.add_argument("--repository", required=True)
     u.add_argument("--tag", required=True)

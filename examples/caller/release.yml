@@ -1,29 +1,51 @@
-name: Release
+name: Version & Release
 
 on:
   workflow_dispatch:
     inputs:
-      release_type:
-        description: Release type
+      release_action:
+        description: 버전 및 배포 작업
         required: true
         type: choice
-        default: beta
+        default: '[개발] RC · 테스트 버전 업데이트'
         options:
-          - beta
-          - patch
-          - minor
-          - major
-          - release
+          - '[개발] Major · 대규모 변경 버전 시작'
+          - '[개발] Minor · 기능 추가 버전 시작'
+          - '[개발] Patch · 버그 수정 버전 시작'
+          - '[개발] RC · 테스트 버전 업데이트'
+          - '[배포] Stable · 정식 버전 출시'
 
 permissions:
   contents: read
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      operation: ${{ steps.resolve.outputs.operation }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          ACTION: ${{ inputs.release_action }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            '[개발] Major · 대규모 변경 버전 시작') OPERATION='dev-major' ;;
+            '[개발] Minor · 기능 추가 버전 시작') OPERATION='dev-minor' ;;
+            '[개발] Patch · 버그 수정 버전 시작') OPERATION='dev-patch' ;;
+            '[개발] RC · 테스트 버전 업데이트') OPERATION='dev-rc' ;;
+            '[배포] Stable · 정식 버전 출시') OPERATION='release-stable' ;;
+            *) echo "::error::알 수 없는 배포 작업: $ACTION"; exit 1 ;;
+          esac
+          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
+
   plan:
+    needs: resolve
     uses: jejusee/releases/.github/workflows/plan.yml@main
     with:
       project: example-project
-      release_type: ${{ inputs.release_type }}
+      operation: ${{ needs.resolve.outputs.operation }}
     secrets:
       RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
@@ -32,24 +54,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      # Replace this step with the project's build/package process.
-      # The version is available before packaging.
       - name: Build package
         shell: bash
         env:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p package dist
-          printf '%s\n' "$VERSION" > package/VERSION
-
-          # Example only.
-          cp -R . package/source
-          rm -rf package/source/.git package/source/dist package/source/package
-
-          tar -czf "dist/example-${VERSION}-linux-x64.tar.gz" -C package .
-
+          mkdir -p dist
+          # Replace this example with the project's real build/package command.
+          tar -czf "dist/example-project-${VERSION}.tar.gz" README.md
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
@@ -59,14 +72,14 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: [plan, package]
+    needs: [resolve, plan, package]
     uses: jejusee/releases/.github/workflows/publish.yml@main
     with:
       project: example-project
-      release_type: ${{ inputs.release_type }}
+      operation: ${{ needs.resolve.outputs.operation }}
       version: ${{ needs.plan.outputs.version }}
       artifact_name: release-package
       asset_spec: >-
-        [{"platform":"linux-x64","file":"example-${{ needs.plan.outputs.version }}-linux-x64.tar.gz","type":"archive","installer":"lib/install.sh"}]
+        [{"platform":"any","file":"example-project-${{ needs.plan.outputs.version }}.tar.gz","type":"archive","installer":"lib/install.sh"}]
     secrets:
       RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}

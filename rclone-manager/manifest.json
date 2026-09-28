@@ -2,30 +2,6 @@
   "schema": 2,
   "project": "rclone-manager",
   "stable": null,
-  "prerelease": {
-    "version": "0.0.1-rc.1",
-    "published_at": "2026-09-28T07:53:22Z",
-    "assets": {
-      "any": {
-        "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.0.1-rc.1/rclone-manager-0.0.1-rc.1.tar.gz",
-        "sha256": "8e32d5d74fb2e9da1087e7c32981251e5e11def713667f7bb08e0d803d0149e7",
-        "type": "archive",
-        "installer": "lib/install.sh"
-      }
-    }
-  },
-  "versions": {
-    "0.0.1-rc.1": {
-      "version": "0.0.1-rc.1",
-      "published_at": "2026-09-28T07:53:22Z",
-      "assets": {
-        "any": {
-          "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.0.1-rc.1/rclone-manager-0.0.1-rc.1.tar.gz",
-          "sha256": "8e32d5d74fb2e9da1087e7c32981251e5e11def713667f7bb08e0d803d0149e7",
-          "type": "archive",
-          "installer": "lib/install.sh"
-        }
-      }
-    }
-  }
+  "prerelease": null,
+  "versions": {}
 }
