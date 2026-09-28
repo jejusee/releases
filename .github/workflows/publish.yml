@@ -7,8 +7,8 @@ on:
         description: Project identifier used for folder and tag prefix
         required: true
         type: string
-      release_type:
-        description: beta, patch, minor, major, or release
+      operation:
+        description: dev-major, dev-minor, dev-patch, dev-rc, or release-stable
         required: true
         type: string
       version:
@@ -58,9 +58,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${{ inputs.release_type }}" in
-            beta|patch|minor|major|release) ;;
-            *) echo "::error::Invalid release_type"; exit 1 ;;
+          case "${{ inputs.operation }}" in
+            dev-major|dev-minor|dev-patch|dev-rc|release-stable) ;;
+            *) echo "::error::Invalid operation"; exit 1 ;;
           esac
           if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
             echo "::error::Invalid project identifier"
@@ -93,7 +93,7 @@ jobs:
             python3 release-hub/scripts/release_hub.py next \
               --project "${{ inputs.project }}" \
               --manifest "$MANIFEST" \
-              --release-type "${{ inputs.release_type }}"
+              --operation "${{ inputs.operation }}"
           )"
 
           TAG="${{ inputs.project }}-v${VERSION}"
@@ -102,7 +102,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           echo "Project : ${{ inputs.project }}"
-          echo "Type    : ${{ inputs.release_type }}"
+          echo "Operation: ${{ inputs.operation }}"
           echo "Version : $VERSION"
           echo "Tag     : $TAG"
 
@@ -139,14 +139,6 @@ jobs:
                   raise SystemExit(f"file must be a plain filename: {filename}")
               if not (Path("assets") / filename).is_file():
                   raise SystemExit(f"artifact file not found: {filename}")
-              asset_type = item.get("type", "archive")
-              if asset_type not in {"archive", "executable", "msi"}:
-                  raise SystemExit(f"invalid asset type: {asset_type}")
-              installer = item.get("installer")
-              if asset_type == "archive" and not installer:
-                  raise SystemExit(f"archive asset requires installer: {platform}")
-              if installer and (Path(installer).is_absolute() or ".." in Path(installer).parts):
-                  raise SystemExit(f"invalid installer path: {installer}")
               seen_platforms.add(platform)
               seen_files.add(filename)
           PY
@@ -195,7 +187,7 @@ jobs:
             --notes "Automated release of ${{ inputs.project }} ${{ steps.meta.outputs.version }}."
           )
 
-          if [[ "${{ inputs.release_type }}" != "release" ]]; then
+          if [[ "${{ inputs.operation }}" != "release-stable" ]]; then
             ARGS+=(--prerelease)
           fi
 
@@ -209,7 +201,7 @@ jobs:
           python3 release-hub/scripts/release_hub.py update \
             --project "${{ inputs.project }}" \
             --manifest "release-hub/${{ inputs.project }}/manifest.json" \
-            --release-type "${{ inputs.release_type }}" \
+            --operation "${{ inputs.operation }}" \
             --version "${{ steps.meta.outputs.version }}" \
             --repository "${{ inputs.target_repository }}" \
             --tag "${{ steps.meta.outputs.tag }}" \
@@ -221,7 +213,6 @@ jobs:
             --manifest "release-hub/${{ inputs.project }}/manifest.json"
 
       - name: Commit manifest
-        id: commit_manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -250,18 +241,6 @@ jobs:
             --draft=false \
             --latest=false
 
-      - name: Clean up failed draft release
-        if: ${{ failure() && steps.meta.outputs.tag != '' && steps.commit_manifest.outcome != 'success' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          set +e
-          IS_DRAFT="$(gh release view "${{ steps.meta.outputs.tag }}" --repo "${{ inputs.target_repository }}" --json isDraft --jq .isDraft 2>/dev/null)"
-          if [[ "$IS_DRAFT" == "true" ]]; then
-            gh release delete "${{ steps.meta.outputs.tag }}" --repo "${{ inputs.target_repository }}" --cleanup-tag --yes
-          fi
-
       - name: Summary
         shell: bash
         run: |
@@ -269,7 +248,7 @@ jobs:
             echo "## Release published"
             echo
             echo "- Project: \`${{ inputs.project }}\`"
-            echo "- Type: \`${{ inputs.release_type }}\`"
+            echo "- Operation: \`${{ inputs.operation }}\`"
             echo "- Version: \`${{ steps.meta.outputs.version }}\`"
             echo "- Tag: \`${{ steps.meta.outputs.tag }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
