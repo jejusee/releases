@@ -1,211 +1,124 @@
 # Releases
 
-여러 프로젝트의 **Public 배포 전용 저장소**입니다.
+개인 프로젝트의 설치 패키지와 업데이트 파일을 배포하기 위한 Public 저장소입니다.
 
-개발 소스는 각 Private 개발 저장소에서 관리하며, 이 저장소에서는 프로그램의 설치·업데이트와 배포 파일을 제공합니다.
+각 프로젝트의 개발 소스는 별도의 Private 저장소에서 관리하며, 이 저장소는 **프로그램 배포와 사용자 문서 제공**을 목적으로 사용합니다.
 
----
+## 사용 방법
 
-# rclone-manager
+사용하려는 프로젝트의 전용 문서를 확인하세요.
 
-Linux 서버에서 여러 rclone mount를 systemd 기반으로 간편하게 관리하는 도구입니다.
+| Project | Description | Documentation |
+|---|---|---|
+| rclone-manager | Linux rclone mount 관리 도구 | [사용 설명서](docs/rclone-manager.md) |
 
-주요 기능:
+각 프로젝트의 설치, 설정, 사용, 업데이트 및 삭제 방법은 해당 프로젝트의 전용 문서에서 제공합니다.
 
-- 여러 rclone mount를 인스턴스별로 관리
-- systemd 자동 시작
-- Read-only / Read-write
-- VFS Cache
-- 상태 및 통계 확인
-- 간편 업데이트
-- 기존 설정을 보존하는 안전한 삭제
-
-## 설치
-
-Linux 서버에서 다음 명령을 실행합니다.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jejusee/releases/main/installers/rclone-manager.sh | sudo bash
-```
-
-`curl`이 없다면:
-
-```bash
-wget -qO- https://raw.githubusercontent.com/jejusee/releases/main/installers/rclone-manager.sh | sudo bash
-```
-
-설치 확인:
-
-```bash
-rclonectl version
-rclonectl help
-```
-
-> rclone-manager를 사용하려면 `rclone`이 먼저 설치되어 있어야 합니다.
-
----
-
-## 업데이트
-
-현재 설치된 버전 확인:
-
-```bash
-rclonectl version
-```
-
-Stable 최신 버전으로 업데이트:
-
-```bash
-sudo rclonectl update
-```
-
-특정 버전으로 업데이트:
-
-```bash
-sudo rclonectl update 0.2.0
-```
-
-RC 등 특정 버전도 직접 지정할 수 있습니다.
-
-```bash
-sudo rclonectl update 0.2.0-rc.1
-```
-
-업데이트 시 기존:
-
-```text
-/etc/rclone/rclone.conf
-/etc/rclone/*.env
-```
-
-설정은 유지됩니다.
-
-실행 중인 mount도 업데이트만으로 자동 재시작하지 않습니다.
-
-필요한 경우 직접 재시작합니다.
-
-```bash
-sudo rclonectl restart all
-```
-
----
-
-## 삭제
-
-### 프로그램만 삭제
-
-기존 rclone 설정을 보존하면서 rclone-manager만 삭제합니다.
-
-```bash
-sudo rclonectl uninstall
-```
-
-일반적으로 이 방법을 사용하면 됩니다.
-
-기존:
-
-```text
-/etc/rclone/rclone.conf
-/etc/rclone/*.env
-```
-
-설정은 그대로 남으므로 나중에 다시 설치해 재사용할 수 있습니다.
-
-### 설정까지 삭제
-
-rclone-manager 설정까지 함께 제거하려면:
-
-```bash
-sudo rclonectl uninstall --purge
-```
-
-`--purge` 사용 시 `rclone.conf`, `*.env`, `remote.env.example`도 제거되므로 필요한 설정은 먼저 백업하세요.
-
-mount 디렉터리와 VFS cache 디렉터리는 자동으로 삭제하지 않습니다.
-
----
-
-## 상세 사용법
-
-처음 설정하거나 새로운 mount를 추가하려면 다음 사용자 가이드를 참고하세요.
-
-**[rclone-manager 사용 가이드](docs/rclone-manager.md)**
-
-사용 가이드에는 다음 내용이 포함되어 있습니다.
-
-- rclone Remote 설정
-- `/etc/rclone/*.env` 설정
-- Mount 인스턴스 추가
-- 시작 / 중지 / 재시작
-- 부팅 시 자동 시작
-- Read-only / Read-write
-- VFS Cache 설정
-- 상태 및 통계 확인
-- 전체 `rclonectl` 명령
-- 문제 해결
-
----
-
-## 빠른 명령
-
-```bash
-# 인스턴스 목록
-rclonectl list
-
-# 상태 확인
-rclonectl status all
-
-# 설정 검사
-sudo rclonectl check all
-
-# 시작
-sudo rclonectl start media
-
-# 중지
-sudo rclonectl stop media
-
-# 재시작
-sudo rclonectl restart media
-
-# 자동 시작
-sudo rclonectl enable media
-
-# 로그
-rclonectl log media
-
-# 현재 버전
-rclonectl version
-
-# 업데이트
-sudo rclonectl update
-
-# 삭제 (설정 유지)
-sudo rclonectl uninstall
-```
-
----
-
-## 배포 구조
+## Repository 구조
 
 ```text
 releases/
 ├── README.md
 ├── docs/
-│   └── rclone-manager.md
+│   ├── rclone-manager.md
+│   └── ...
 ├── installers/
-│   └── rclone-manager.sh
+│   ├── rclone-manager.sh
+│   └── ...
 └── manifests/
-    └── rclone-manager.json
+    ├── rclone-manager.json
+    └── ...
 ```
 
-실제 `.tar.gz`, `.zip`, `.exe` 등의 프로그램 패키지는 Git 저장소에 Commit하지 않고 **GitHub Release Assets**로 배포합니다.
+### `docs/`
 
-현재 Stable/Prerelease 버전과 다운로드 위치는:
+프로젝트별 사용자 설명서를 저장합니다.
+
+각 문서에는 해당 프로젝트의:
+
+- 설치
+- 초기 설정
+- 사용 방법
+- 업데이트
+- 삭제
+- 문제 해결
+
+등 실제 사용에 필요한 내용을 제공합니다.
+
+### `installers/`
+
+프로젝트별 설치 프로그램을 제공합니다.
+
+예:
+
+```text
+installers/rclone-manager.sh
+```
+
+설치 방법은 각 프로젝트의 `docs/` 문서를 참고하세요.
+
+### `manifests/`
+
+프로젝트별 배포 버전과 다운로드 정보를 관리합니다.
+
+예:
 
 ```text
 manifests/rclone-manager.json
 ```
 
-에서 관리합니다.
+Manifest는 설치 및 업데이트 프로그램이 현재 배포 버전과 Release Asset을 확인하기 위해 사용합니다.
 
-Release 버전이 변경될 때마다 README를 수정할 필요는 없습니다. **설치 방법이나 사용 방법 자체가 변경된 경우에만 README 또는 사용자 가이드를 갱신합니다.**
+일반 사용자가 직접 수정할 필요는 없습니다.
+
+### GitHub Releases
+
+실제 배포 패키지는 Git 저장소에 직접 저장하지 않고 GitHub Release Assets로 제공합니다.
+
+예:
+
+```text
+rclone-manager-v0.1.0
+└── rclone-manager-0.1.0.tar.gz
+```
+
+## Stable / Prerelease
+
+프로젝트는 필요에 따라 Stable과 Prerelease 버전을 구분하여 배포할 수 있습니다.
+
+```text
+Stable
+0.1.0
+0.2.0
+
+Prerelease
+0.2.0-rc.1
+0.2.0-rc.2
+```
+
+일반 설치 및 업데이트에서는 Stable 버전을 사용합니다.
+
+Prerelease 버전은 테스트가 필요한 경우 명시적으로 선택하여 사용합니다.
+
+## 배포 원칙
+
+개발 소스와 배포 파일을 분리하여 관리합니다.
+
+```text
+Private Development Repository
+        │
+        │ GitHub Actions
+        ▼
+Public releases Repository
+        │
+        ├── Documentation
+        ├── Installer
+        ├── Manifest
+        │
+        ▼
+GitHub Release Assets
+```
+
+새로운 버전이 배포되면 Manifest가 갱신되므로 **버전이 변경될 때마다 README를 수정할 필요는 없습니다.**
+
+README 또는 `docs/` 문서는 설치 방법, 명령어, 설정 방법 등 **사용 방법 자체가 변경된 경우에만 갱신**합니다.
