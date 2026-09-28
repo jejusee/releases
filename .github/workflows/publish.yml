@@ -1,0 +1,254 @@
+name: Release Hub
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: Project identifier used for folder and tag prefix
+        required: true
+        type: string
+      release_type:
+        description: beta, patch, minor, major, or release
+        required: true
+        type: string
+      version:
+        description: Version returned by plan.yml
+        required: true
+        type: string
+      artifact_name:
+        description: Workflow artifact containing finished release files
+        required: true
+        type: string
+      asset_spec:
+        description: JSON array mapping platform keys to filenames
+        required: true
+        type: string
+      target_repository:
+        description: Public distribution repository
+        required: false
+        default: jejusee/releases
+        type: string
+    secrets:
+      RELEASE_TOKEN:
+        required: true
+    outputs:
+      version:
+        description: Published semantic version
+        value: ${{ jobs.publish.outputs.version }}
+      tag:
+        description: Published Git tag
+        value: ${{ jobs.publish.outputs.tag }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-hub-${{ inputs.project }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.release_type }}" in
+            beta|patch|minor|major|release) ;;
+            *) echo "::error::Invalid release_type"; exit 1 ;;
+          esac
+          if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::Invalid project identifier"
+            exit 1
+          fi
+
+      - name: Checkout Release Hub
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.target_repository }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          ref: main
+          path: release-hub
+          fetch-depth: 0
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: assets
+
+      - name: Calculate version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="release-hub/${{ inputs.project }}/manifest.json"
+
+          VERSION="$(
+            python3 release-hub/scripts/release_hub.py next \
+              --project "${{ inputs.project }}" \
+              --manifest "$MANIFEST" \
+              --release-type "${{ inputs.release_type }}"
+          )"
+
+          TAG="${{ inputs.project }}-v${VERSION}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Project : ${{ inputs.project }}"
+          echo "Type    : ${{ inputs.release_type }}"
+          echo "Version : $VERSION"
+          echo "Tag     : $TAG"
+
+      - name: Validate asset specification
+        shell: bash
+        env:
+          ASSET_SPEC: ${{ inputs.asset_spec }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ASSET_SPEC" > asset-spec.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          spec = json.loads(Path("asset-spec.json").read_text())
+          if not isinstance(spec, list) or not spec:
+              raise SystemExit("asset_spec must be a non-empty JSON array")
+
+          seen_platforms = set()
+          seen_files = set()
+          for item in spec:
+              if not isinstance(item, dict):
+                  raise SystemExit("each asset_spec item must be an object")
+              platform = item.get("platform")
+              filename = item.get("file")
+              if not platform or not filename:
+                  raise SystemExit("each item requires platform and file")
+              if platform in seen_platforms:
+                  raise SystemExit(f"duplicate platform: {platform}")
+              if filename in seen_files:
+                  raise SystemExit(f"duplicate file: {filename}")
+              if Path(filename).name != filename:
+                  raise SystemExit(f"file must be a plain filename: {filename}")
+              if not (Path("assets") / filename).is_file():
+                  raise SystemExit(f"artifact file not found: {filename}")
+              seen_platforms.add(platform)
+              seen_files.add(filename)
+          PY
+
+      - name: Ensure release does not already exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${{ steps.meta.outputs.tag }}" \
+               --repo "${{ inputs.target_repository }}" >/dev/null 2>&1; then
+            echo "::error::Release already exists: ${{ steps.meta.outputs.tag }}"
+            exit 1
+          fi
+
+          if git -C release-hub rev-parse \
+               "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Tag already exists: ${{ steps.meta.outputs.tag }}"
+            exit 1
+          fi
+
+      - name: Create draft release and upload assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t FILES < <(
+            python3 - <<'PY'
+          import json
+          for item in json.load(open("asset-spec.json", encoding="utf-8")):
+              print("assets/" + item["file"])
+          PY
+          )
+
+          ARGS=(
+            "${{ steps.meta.outputs.tag }}"
+            --repo "${{ inputs.target_repository }}"
+            --target main
+            --title "${{ inputs.project }} ${{ steps.meta.outputs.version }}"
+            --draft
+            --latest=false
+            --notes "Automated release of ${{ inputs.project }} ${{ steps.meta.outputs.version }}."
+          )
+
+          if [[ "${{ inputs.release_type }}" != "release" ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          gh release create "${ARGS[@]}" "${FILES[@]}"
+
+      - name: Update manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 release-hub/scripts/release_hub.py update \
+            --project "${{ inputs.project }}" \
+            --manifest "release-hub/${{ inputs.project }}/manifest.json" \
+            --release-type "${{ inputs.release_type }}" \
+            --version "${{ steps.meta.outputs.version }}" \
+            --repository "${{ inputs.target_repository }}" \
+            --tag "${{ steps.meta.outputs.tag }}" \
+            --assets-dir assets \
+            --asset-spec asset-spec.json
+
+          python3 release-hub/scripts/release_hub.py validate \
+            --project "${{ inputs.project }}" \
+            --manifest "release-hub/${{ inputs.project }}/manifest.json"
+
+      - name: Commit manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-hub
+
+          git config user.name "release-hub[bot]"
+          git config user.email "release-hub[bot]@users.noreply.github.com"
+
+          git add "${{ inputs.project }}/manifest.json"
+          git diff --cached --quiet && {
+            echo "::error::Manifest did not change"
+            exit 1
+          }
+
+          git commit -m "release(${{ inputs.project }}): ${{ steps.meta.outputs.version }}"
+          git push origin HEAD:main
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release edit "${{ steps.meta.outputs.tag }}" \
+            --repo "${{ inputs.target_repository }}" \
+            --draft=false \
+            --latest=false
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## Release published"
+            echo
+            echo "- Project: \`${{ inputs.project }}\`"
+            echo "- Type: \`${{ inputs.release_type }}\`"
+            echo "- Version: \`${{ steps.meta.outputs.version }}\`"
+            echo "- Tag: \`${{ steps.meta.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
