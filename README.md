@@ -4,7 +4,7 @@
 
 It owns the public distribution contract:
 
-- semantic version calculation
+- version strategy and version validation
 - prerelease/stable promotion
 - GitHub Release creation
 - immutable Release Assets
@@ -16,34 +16,81 @@ Build and test logic stays in each development repository.
 
 ## Release model
 
-A development repository builds a finished package, uploads it as a workflow artifact,
-then calls the reusable workflows in this repository.
+A development repository asks the hub for a version, builds a finished package with that
+version, uploads it as a workflow artifact, and asks the hub to publish it.
 
-The public caller still exposes only one **Release** Action. Internally the hub uses
-two reusable stages so projects can embed the calculated version before packaging:
+```text
+plan -> project build/package -> publish
+```
 
-`plan -> project build/package -> publish`.
+### Default strategy: SemVer
 
-Operations:
+When `versioning.strategy` is omitted, the hub uses `semver` by default. The default
+prerelease identifier is `dev`.
 
-| Group | Operation | Meaning |
-|---|---|---|
-| Development | `dev-major` | Start the next major version (`1.2.3` -> `2.0.0-rc.1`) |
-| Development | `dev-minor` | Start the next minor version (`1.2.3` -> `1.3.0-rc.1`) |
-| Development | `dev-patch` | Start the next patch version (`1.2.3` -> `1.2.4-rc.1`) |
-| Development | `dev-rc` | Increment the active test version (`1.3.0-rc.1` -> `1.3.0-rc.2`) |
-| Release | `release-stable` | Promote the active RC to stable (`1.3.0-rc.2` -> `1.3.0`) |
+```json
+"versioning": {
+  "strategy": "semver",
+  "prerelease": "dev"
+}
+```
 
-Rules:
+The normal development operation is `dev` with one of these bump values:
 
-- `dev-rc` requires an active prerelease.
-- `release-stable` requires an active prerelease.
-- `dev-major`, `dev-minor`, and `dev-patch` require no active prerelease.
+| Bump | Meaning |
+|---|---|
+| `auto` | Continue the active prerelease; if none exists, start the next patch after Stable |
+| `patch` | Use the next patch version based on Stable |
+| `minor` | Use the next minor version based on Stable |
+| `major` | Use the next major version based on Stable |
+| `custom` | Use an explicitly supplied `MAJOR.MINOR.PATCH` target |
+
+Examples:
+
+```text
+Stable 1.2.3 + auto       -> 1.2.4-dev.1
+1.3.0-dev.4 + auto        -> 1.3.0-dev.5
+Stable 1.2.3 + minor      -> 1.3.0-dev.1
+Stable 1.2.3 + major      -> 2.0.0-dev.1
+custom target 1.5.0       -> 1.5.0-dev.1
+1.5.0-dev.7 + stable      -> 1.5.0
+```
+
+`release-stable` has no bump decision. It promotes the base version of the active
+prerelease and clears the active prerelease channel.
+
+The prerelease label is configurable per project. For example, `"prerelease": "rc"`
+produces `1.3.0-rc.1` instead of `1.3.0-dev.1`.
+
+Legacy operations `dev-major`, `dev-minor`, `dev-patch`, and `dev-rc` remain available
+for existing callers, but new projects should use `dev` plus `bump`.
+
+### Custom strategy
+
+A project that does not use SemVer can declare:
+
+```json
+"versioning": {
+  "strategy": "custom",
+  "prerelease": "dev"
+}
+```
+
+For this strategy the project supplies the exact version through `target_version`.
+The hub does not calculate that project's version scheme, but still protects published
+history and performs the common release/asset/manifest work.
+
+## Safety rules
+
 - A released version is never republished.
 - Existing Release Assets are never overwritten.
-- `manifest.json` is updated only after all assets are uploaded successfully.
-- `stable` is not changed by RC releases.
-- `versions` keeps immutable historical metadata.
+- SemVer target versions cannot move backward from the active prerelease line.
+- A Stable version already present in history cannot be reused as a new target.
+- `publish.yml` verifies that the version returned by `plan.yml` is still the current
+  expected version before creating the GitHub Release. A stale plan fails instead of
+  silently publishing a different version.
+- `manifest.json` is committed only after all assets are uploaded successfully.
+- `versions` keeps immutable historical release metadata.
 
 ## Repository layout
 
@@ -55,6 +102,8 @@ releases/
 │       └── publish.yml
 ├── scripts/
 │   └── release_hub.py
+├── tests/
+│   └── test_release_hub.py
 ├── examples/
 │   └── caller/
 │       └── release.yml
@@ -65,61 +114,37 @@ releases/
 └── README.md
 ```
 
+Project-specific Dev/Stable workflow files belong in the project's development
+repository, not in this Release Hub repository.
+
 ## Project manifest
 
-Each project owns `<project>/manifest.json`.
+Each project owns `<project>/manifest.json`. `stable` and `prerelease` point to the
+current channels; `versions` contains release history.
 
-The hub supports any platform key, for example:
-
-- `linux-x64`
-- `linux-arm64`
-- `windows-x64`
-- `windows-arm64`
-- `macos-arm64`
-- `any`
-
-A release may contain multiple assets/platforms.
+The hub supports arbitrary platform keys such as `linux-x64`, `linux-arm64`,
+`windows-x64`, `windows-arm64`, `macos-arm64`, and `any`.
 
 ## Calling the hub
 
-Each development repository keeps only a small caller workflow. See
-`examples/caller/release.yml`.
+See `examples/caller/release.yml`. A project caller normally:
 
-The caller:
+1. selects `auto`, `patch`, `minor`, `major`, or `custom` for a Dev release;
+2. calls `plan.yml`;
+3. builds/packages using the returned version;
+4. uploads the finished package as a workflow artifact;
+5. calls `publish.yml` with exactly the planned version.
 
-1. chooses `[개발] Major/Minor/Patch/RC` or `[배포] Stable`;
-2. asks the hub for the next version;
-3. builds/packages using that version;
-4. uploads the finished files as one workflow artifact;
-5. calls the hub to publish them.
-
-This repository does not need to know whether the package was produced by Bash,
-.NET, Python, Node.js, or another tool.
+A Stable workflow simply uses `operation: release-stable`.
 
 ## Required secret
 
-Development repositories must provide `RELEASE_TOKEN`.
-
-The token must be able to:
-
-- create Releases in `jejusee/releases`;
-- upload Release Assets;
-- commit and push the changed project manifest.
-
-Use the minimum repository scope required for `jejusee/releases`.
+Development repositories must provide `RELEASE_TOKEN` with the minimum permissions
+needed to create Releases, upload Release Assets, and commit the changed project
+manifest in `jejusee/releases`.
 
 ## Workflow version pinning
 
-During initial development a caller can use:
-
-```yaml
-uses: jejusee/releases/.github/workflows/plan.yml@main
-```
-
-After the hub is validated, create a stable hub tag such as `hub-v1` and pin callers:
-
-```yaml
-uses: jejusee/releases/.github/workflows/plan.yml@hub-v1
-```
-
-That prevents future hub maintenance from unexpectedly changing existing projects.
+During hub development callers may use `@main`. After the contract is validated,
+pin callers to a stable hub tag such as `@hub-v2` so later hub changes cannot
+unexpectedly change existing projects.
