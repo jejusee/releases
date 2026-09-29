@@ -4,15 +4,23 @@ on:
   workflow_call:
     inputs:
       project:
-        description: Project identifier
         required: true
         type: string
       operation:
-        description: dev-major, dev-minor, dev-patch, dev-rc, or release-stable
+        description: dev, release-stable, or a legacy operation
         required: true
         type: string
+      bump:
+        description: auto, patch, minor, major, custom
+        required: false
+        default: auto
+        type: string
+      target_version:
+        description: Explicit base/exact version when required by the strategy
+        required: false
+        default: ''
+        type: string
       target_repository:
-        description: Public distribution repository
         required: false
         default: jejusee/releases
         type: string
@@ -21,10 +29,8 @@ on:
         required: true
     outputs:
       version:
-        description: Version to embed in the package
         value: ${{ jobs.plan.outputs.version }}
       tag:
-        description: Tag that will be created
         value: ${{ jobs.plan.outputs.tag }}
 
 permissions:
@@ -36,20 +42,22 @@ jobs:
     outputs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
-
     steps:
       - name: Validate inputs
         shell: bash
         run: |
           set -euo pipefail
           case "${{ inputs.operation }}" in
-            dev-major|dev-minor|dev-patch|dev-rc|release-stable) ;;
+            dev|release-stable|dev-major|dev-minor|dev-patch|dev-rc) ;;
             *) echo "::error::Invalid operation"; exit 1 ;;
           esac
-          if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
-            echo "::error::Invalid project identifier"
-            exit 1
-          fi
+          case "${{ inputs.bump }}" in
+            auto|patch|minor|major|custom) ;;
+            *) echo "::error::Invalid bump"; exit 1 ;;
+          esac
+          [[ "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
+            echo "::error::Invalid project identifier"; exit 1;
+          }
 
       - name: Checkout Release Hub
         uses: actions/checkout@v5
@@ -63,25 +71,29 @@ jobs:
       - name: Calculate next version
         id: plan
         shell: bash
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
         run: |
           set -euo pipefail
-
-          VERSION="$(
-            python3 release-hub/scripts/release_hub.py next \
-              --project "${{ inputs.project }}" \
-              --manifest "release-hub/${{ inputs.project }}/manifest.json" \
-              --operation "${{ inputs.operation }}"
-          )"
+          ARGS=(
+            next
+            --project "${{ inputs.project }}"
+            --manifest "release-hub/${{ inputs.project }}/manifest.json"
+            --operation "${{ inputs.operation }}"
+            --bump "${{ inputs.bump }}"
+          )
+          [[ -z "$TARGET_VERSION" ]] || ARGS+=(--target-version "$TARGET_VERSION")
+          VERSION="$(python3 release-hub/scripts/release_hub.py "${ARGS[@]}")"
           TAG="${{ inputs.project }}-v${VERSION}"
-
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
           {
             echo "## Release plan"
             echo
             echo "- Project: \`${{ inputs.project }}\`"
             echo "- Operation: \`${{ inputs.operation }}\`"
+            echo "- Bump: \`${{ inputs.bump }}\`"
+            [[ -z "$TARGET_VERSION" ]] || echo "- Requested: \`$TARGET_VERSION\`"
             echo "- Version: \`$VERSION\`"
             echo "- Tag: \`$TAG\`"
           } >> "$GITHUB_STEP_SUMMARY"

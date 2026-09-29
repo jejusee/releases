@@ -8,8 +8,18 @@ on:
         required: true
         type: string
       operation:
-        description: dev-major, dev-minor, dev-patch, dev-rc, or release-stable
+        description: dev, release-stable, or a legacy operation
         required: true
+        type: string
+      bump:
+        description: auto, patch, minor, major, custom
+        required: false
+        default: auto
+        type: string
+      target_version:
+        description: Explicit base/exact version when required by the strategy
+        required: false
+        default: ''
         type: string
       version:
         description: Version returned by plan.yml
@@ -59,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.operation }}" in
-            dev-major|dev-minor|dev-patch|dev-rc|release-stable) ;;
+            dev|release-stable|dev-major|dev-minor|dev-patch|dev-rc) ;;
             *) echo "::error::Invalid operation"; exit 1 ;;
           esac
           if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
@@ -89,12 +99,15 @@ jobs:
           set -euo pipefail
           MANIFEST="release-hub/${{ inputs.project }}/manifest.json"
 
-          VERSION="$(
-            python3 release-hub/scripts/release_hub.py next \
-              --project "${{ inputs.project }}" \
-              --manifest "$MANIFEST" \
-              --operation "${{ inputs.operation }}"
-          )"
+          ARGS=(
+            next
+            --project "${{ inputs.project }}"
+            --manifest "$MANIFEST"
+            --operation "${{ inputs.operation }}"
+            --bump "${{ inputs.bump }}"
+          )
+          [[ -z "${{ inputs.target_version }}" ]] || ARGS+=(--target-version "${{ inputs.target_version }}")
+          VERSION="$(python3 release-hub/scripts/release_hub.py "${ARGS[@]}")"
 
           TAG="${{ inputs.project }}-v${VERSION}"
 
@@ -195,18 +208,24 @@ jobs:
 
       - name: Update manifest
         shell: bash
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
         run: |
           set -euo pipefail
-
-          python3 release-hub/scripts/release_hub.py update \
-            --project "${{ inputs.project }}" \
-            --manifest "release-hub/${{ inputs.project }}/manifest.json" \
-            --operation "${{ inputs.operation }}" \
-            --version "${{ steps.meta.outputs.version }}" \
-            --repository "${{ inputs.target_repository }}" \
-            --tag "${{ steps.meta.outputs.tag }}" \
-            --assets-dir assets \
+          ARGS=(
+            update
+            --project "${{ inputs.project }}"
+            --manifest "release-hub/${{ inputs.project }}/manifest.json"
+            --operation "${{ inputs.operation }}"
+            --bump "${{ inputs.bump }}"
+            --version "${{ steps.meta.outputs.version }}"
+            --repository "${{ inputs.target_repository }}"
+            --tag "${{ steps.meta.outputs.tag }}"
+            --assets-dir assets
             --asset-spec asset-spec.json
+          )
+          [[ -z "$TARGET_VERSION" ]] || ARGS+=(--target-version "$TARGET_VERSION")
+          python3 release-hub/scripts/release_hub.py "${ARGS[@]}"
 
           python3 release-hub/scripts/release_hub.py validate \
             --project "${{ inputs.project }}" \
