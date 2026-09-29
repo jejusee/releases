@@ -1,51 +1,40 @@
-name: Version & Release
+name: Example Dev Release
 
 on:
   workflow_dispatch:
     inputs:
-      release_action:
-        description: 버전 및 배포 작업
+      bump:
+        description: Version action
         required: true
         type: choice
-        default: '[개발] RC · 테스트 버전 업데이트'
+        default: auto
         options:
-          - '[개발] Major · 대규모 변경 버전 시작'
-          - '[개발] Minor · 기능 추가 버전 시작'
-          - '[개발] Patch · 버그 수정 버전 시작'
-          - '[개발] RC · 테스트 버전 업데이트'
-          - '[배포] Stable · 정식 버전 출시'
+          - auto
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: Custom target MAJOR.MINOR.PATCH (used only with custom)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
-jobs:
-  resolve:
-    runs-on: ubuntu-latest
-    outputs:
-      operation: ${{ steps.resolve.outputs.operation }}
-    steps:
-      - id: resolve
-        shell: bash
-        env:
-          ACTION: ${{ inputs.release_action }}
-        run: |
-          set -euo pipefail
-          case "$ACTION" in
-            '[개발] Major · 대규모 변경 버전 시작') OPERATION='dev-major' ;;
-            '[개발] Minor · 기능 추가 버전 시작') OPERATION='dev-minor' ;;
-            '[개발] Patch · 버그 수정 버전 시작') OPERATION='dev-patch' ;;
-            '[개발] RC · 테스트 버전 업데이트') OPERATION='dev-rc' ;;
-            '[배포] Stable · 정식 버전 출시') OPERATION='release-stable' ;;
-            *) echo "::error::알 수 없는 배포 작업: $ACTION"; exit 1 ;;
-          esac
-          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
+concurrency:
+  group: example-project-release
+  cancel-in-progress: false
 
+jobs:
   plan:
-    needs: resolve
     uses: jejusee/releases/.github/workflows/plan.yml@main
     with:
       project: example-project
-      operation: ${{ needs.resolve.outputs.operation }}
+      operation: dev
+      bump: ${{ inputs.bump }}
+      target_version: ${{ inputs.custom_version }}
     secrets:
       RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
@@ -61,7 +50,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Replace this example with the project's real build/package command.
           tar -czf "dist/example-project-${VERSION}.tar.gz" README.md
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -72,11 +60,13 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: [resolve, plan, package]
+    needs: [plan, package]
     uses: jejusee/releases/.github/workflows/publish.yml@main
     with:
       project: example-project
-      operation: ${{ needs.resolve.outputs.operation }}
+      operation: dev
+      bump: ${{ inputs.bump }}
+      target_version: ${{ inputs.custom_version }}
       version: ${{ needs.plan.outputs.version }}
       artifact_name: release-package
       asset_spec: >-
