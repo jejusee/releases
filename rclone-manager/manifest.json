@@ -1,6 +1,10 @@
 {
   "schema": 2,
   "project": "rclone-manager",
+  "versioning": {
+    "strategy": "semver",
+    "prerelease": "dev"
+  },
   "stable": null,
   "prerelease": {
     "version": "0.1.0-rc.1",
