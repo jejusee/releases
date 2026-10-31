@@ -1,40 +1,31 @@
 name: Release Hub
-
 on:
   workflow_call:
     inputs:
       project:
-        description: Project identifier used for folder and tag prefix
         required: true
         type: string
       operation:
-        description: dev, release-stable, or a legacy operation
         required: true
         type: string
       bump:
-        description: auto, patch, minor, major, custom
         required: false
         default: auto
         type: string
       target_version:
-        description: Explicit base/exact version when required by the strategy
         required: false
         default: ''
         type: string
       version:
-        description: Version returned by plan.yml
         required: true
         type: string
       artifact_name:
-        description: Workflow artifact containing finished release files
         required: true
         type: string
       asset_spec:
-        description: JSON array mapping platform keys to filenames
         required: true
         type: string
       target_repository:
-        description: Public distribution repository
         required: false
         default: jejusee/releases
         type: string
@@ -43,54 +34,104 @@ on:
         required: true
     outputs:
       version:
-        description: Published semantic version
         value: ${{ jobs.publish.outputs.version }}
       tag:
-        description: Published Git tag
         value: ${{ jobs.publish.outputs.tag }}
-
 permissions:
   contents: read
-
 concurrency:
   group: release-hub-${{ inputs.project }}
   cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
-
     steps:
-      - name: Validate inputs
+      - name: Validate release metadata
+        id: meta
         shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ inputs.target_repository }}
         run: |
           set -euo pipefail
-          case "${{ inputs.operation }}" in
-            dev|release-stable|dev-major|dev-minor|dev-patch|dev-rc) ;;
-            *) echo "::error::Invalid operation"; exit 1 ;;
-          esac
-          if [[ ! "${{ inputs.project }}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
-            echo "::error::Invalid project identifier"
-            exit 1
-          fi
-
-      - name: Checkout Release Hub
-        uses: actions/checkout@v5
+          [[ "$PROJECT" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || exit 1
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || exit 1
+          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || exit 1
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=${PROJECT}-v${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Checkout public release hub
+        uses: actions/checkout@v4
         with:
           repository: ${{ inputs.target_repository }}
           token: ${{ secrets.RELEASE_TOKEN }}
           ref: main
           path: release-hub
           fetch-depth: 0
-
-      - name: Download package artifact
-        uses: actions/download-artifact@v5
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
           path: assets
-
-      - name: Validate planned version
-        id: meta
+      - name: Validate files and prepare manifest
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          REPOSITORY: ${{ inputs.target_repository }}
+          ASSET_SPEC: ${{ inputs.asset_spec }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re
+          root = pathlib.Path('assets').resolve()
+          spec = json.loads(os.environ['ASSET_SPEC'])
+          if not isinstance(spec, list) or not spec: raise SystemExit('asset_spec must be a nonempty array')
+          assets = {}
+          for item in spec:
+              platform, filename = item['platform'], item['file']
+              if not re.fullmatch(r'[a-z0-9][a-z0-9._-]*', platform): raise SystemExit('Invalid platform')
+              if pathlib.PurePath(filename).name != filename: raise SystemExit('Invalid filename')
+              path = (root / filename).resolve()
+              if not path.is_file() or root not in path.parents: raise SystemExit('Missing asset: ' + filename)
+              if platform in assets: raise SystemExit('Duplicate platform: ' + platform)
+              sha = hashlib.sha256(path.read_bytes()).hexdigest()
+              assets[platform] = {'url': 'https://github.com/{}/releases/download/{}/{}'.format(os.environ['REPOSITORY'], os.environ['TAG'], filename), 'sha256': sha}
+          pathlib.Path('assets.json').write_text(json.dumps(assets, indent=2))
+          PY
+          python3 release-hub/scripts/release_hub.py publish \
+            --project "$PROJECT" --manifest "release-hub/$PROJECT/manifest.json" \
+            --version "$VERSION" --assets-json assets.json --repository "$REPOSITORY"
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPOSITORY: ${{ inputs.target_repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "Release tag already exists: $TAG" >&2
+            exit 1
+          fi
+          args=(--repo "$REPOSITORY" --title "$TAG" --notes "Release $VERSION" --target main)
+          [[ "$VERSION" != *-* ]] || args+=(--prerelease)
+          gh release create "$TAG" assets/* "${args[@]}"
+      - name: Commit updated manifest
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          cd release-hub
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$PROJECT/manifest.json"
+          git commit -m "release($PROJECT): $VERSION"
+          git push origin HEAD:main
