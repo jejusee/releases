@@ -7,12 +7,12 @@
   },
   "stable": null,
   "prerelease": {
-    "version": "0.1.0-rc.1",
-    "published_at": "2026-09-28T09:39:27Z",
+    "version": "0.1.0-dev.1",
+    "published_at": "2026-10-31T04:59:50Z",
     "assets": {
       "any": {
-        "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.1.0-rc.1/rclone-manager-0.1.0-rc.1.tar.gz",
-        "sha256": "fafe78c6e4b9c462768919ffadad078ce98caf708a7e16feeca3c3aa0f774921"
+        "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.1.0-dev.1/rclone-manager-0.1.0-dev.1.tar.gz",
+        "sha256": "ff694e94ba5257c5372df8cfeeea309ea9eb1ede860c48c60b57dec0aad204cf"
       }
     }
   },
@@ -24,6 +24,16 @@
         "any": {
           "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.1.0-rc.1/rclone-manager-0.1.0-rc.1.tar.gz",
           "sha256": "fafe78c6e4b9c462768919ffadad078ce98caf708a7e16feeca3c3aa0f774921"
+        }
+      }
+    },
+    "0.1.0-dev.1": {
+      "version": "0.1.0-dev.1",
+      "published_at": "2026-10-31T04:59:50Z",
+      "assets": {
+        "any": {
+          "url": "https://github.com/jejusee/releases/releases/download/rclone-manager-v0.1.0-dev.1/rclone-manager-0.1.0-dev.1.tar.gz",
+          "sha256": "ff694e94ba5257c5372df8cfeeea309ea9eb1ede860c48c60b57dec0aad204cf"
         }
       }
     }
